@@ -1,0 +1,15 @@
+Dataset_Name\n
+Total_Records,Count\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+Field_name,Null_Count,Percent\n
+etc...
