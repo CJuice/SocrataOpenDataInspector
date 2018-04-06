@@ -1,6 +1,6 @@
 """
 What does this do?
-    it inventories any dataset whose api url it is given
+    it inventories any socrata dataset whose api url it is given
     the inventory is of every field in the dataset
     null and empty values are counted for each and every field
     a csv report is generated for every dataset
