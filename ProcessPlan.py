@@ -9,9 +9,7 @@ What does this do?
     it reads this from the api metadata for the dataset
 
 """
-# TODO: Add timing functionality
-# TODO: Must handle large datasets that exceed the limit request
-# TODO: Develop report writing functionality. Will be applied to every dataset.
+# TODO: Must handle datasets without a transmitted header/field list
 # TODO: add multithreading/workers for speed
 
 # IMPORTS
@@ -25,14 +23,13 @@ from datetime import date
 
 # VARIABLES
 DATA_FRESHNESS_REPORT_API_ID = ("t8k3-edvn",)
-root_url_for_dataset_access = r"https://data.maryland.gov/resource/"
+ROOT_URL_FOR_DATASET_ACCESS = r"https://data.maryland.gov/resource/"
 ROOT_URL_FOR_CSV_OUTPUT = r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs"
+OVERVIEW_STATS_FILE_NAME = "_OVERVIEW_STATS"
 LIMIT_MAX_AND_OFFSET = (20000,)
 dataset_exceptions_startswith = ("Maryland Statewide Vehicle Crashes")
-
-
-# root_url_for_metadata_access = r"https://data.maryland.gov/api/views/metadata/v1"
-# dict_of_Socrata_Dataset_IDs = {}
+datasets_with_too_many_fields = set()
+dataset_overview_stats = {}
 
 # FUNCTIONS
 #TODO: should I have default values for offset and total_count ?
@@ -63,54 +60,100 @@ def build_datasets_inventory(dataset_url):
             dict[dataset_name] = os.path.basename(api_id)
     return dict
 
-def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
-    record_keys = record_dictionary.keys()
-    for null_counter_key in field_null_count_dict.keys():
-        if null_counter_key in record_keys:
-            value_of_focus = None
-            try:
-                value_of_focus = record_dictionary[null_counter_key]
+def build_today_date_string():
+    return "{:%Y%m%d}".format(date.today())
 
-                # Handle dictionaries (location_1), ints, lists
-                if isinstance(value_of_focus, types.StringType):
-                    value_of_focus = value_of_focus.encode("utf8")
-                elif isinstance(value_of_focus, types.DictType):
-                    value_of_focus = "value is a dictionary"
-                elif isinstance(value_of_focus, types.IntType):
-                    value_of_focus = str(value_of_focus)
-                    # .encode("utf8")
-                else:
-                    value_of_focus = value_of_focus.encode("utf8")
-            except UnicodeEncodeError as e:
-                print(e)
-            except AttributeError as e:
-                print("AttributeError: key={}, key type={}\n\t{}".format(null_counter_key, type(null_counter_key),
-                                                                         record_dictionary))
-                print(e)
-            # value_of_focus = str(value_of_focus)
-            if value_of_focus == None or value_of_focus.strip() == "" or len(value_of_focus) == 0:
-                field_null_count_dict[null_counter_key] += 1
-            else:
-                pass
+def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=False):
+    if spaces_allowed:
+        re_string = "[a-zA-Z0-9 ]"
+    else:
+        re_string = "[a-zA-Z0-9]"
+    strings_list = re.findall(re_string,string_with_illegals)
+    concatenated = ""
+    for item in strings_list:
+        if len(item) > 0:
+            concatenated = concatenated + item
+    return concatenated
+
+def build_csv_file_name_with_date(today_date_string, filename):
+    return "{}_{}.csv".format(today_date_string, filename)
+
+def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
+    # In the response from a request to Socrata, only the fields with non-null/empty values appear to be included
+    record_dictionary_fields = record_dictionary.keys()
+    for field_name in field_null_count_dict.keys():
+        if field_name in record_dictionary_fields:
+            # If we rely on Socrata to filter out null values and not return a field if it is null then we don't
+            #   need to check the data and can simply look at the included field names. The code in this "if" statement
+            #   checked the data values for null but doesn't seem necessary given Socrata appears to
+            #   prefilter null/empty data. Leaving the code until we are confident in this assumption.
+
+            # data_value_of_focus = None
+            # try:
+            #     data_value_of_focus = record_dictionary[field_name]
+            #
+            #     # Handle dictionaries (location_1), ints, lists, that cause errors when encoding
+            #     if isinstance(data_value_of_focus, types.StringType):
+            #         data_value_of_focus = data_value_of_focus.encode("utf8")
+            #     elif isinstance(data_value_of_focus, types.DictType):
+            #         data_value_of_focus = "value is a dictionary"
+            #     elif isinstance(data_value_of_focus, types.IntType):
+            #         data_value_of_focus = str(data_value_of_focus)
+            #     else:
+            #         data_value_of_focus = data_value_of_focus.encode("utf8")
+            # except UnicodeEncodeError as e:
+            #     print(e)
+            # except AttributeError as e:
+            #     # print("AttributeError: key={}, key type={}\n\t{}".format(field_name, type(field_name),
+            #     #                                                          record_dictionary))
+            #     print(e)
+            #
+            # if data_value_of_focus == None or data_value_of_focus.strip() == "" or len(data_value_of_focus) == 0:
+            #     field_null_count_dict[field_name] += 1
+            # else:
+            #     pass
+            pass
         else:
             # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
-            field_null_count_dict[null_counter_key] += 1
+            field_null_count_dict[field_name] += 1
     return
 
-def write_results_to_csv(root_file_destination_location, dataset_name, dataset_inspection_results, total_records):
-    today_date_string = "{:%Y%m%d}".format(date.today())
-    dataset_name = dataset_name.replace(" ", "_")
-    file_name_string = "{}_{}".format(today_date_string, dataset_name)
-    file_path = os.path.join(root_file_destination_location, file_name_string)
+def calculate_total_number_of_empty_values_per_dataset(null_counts_list):
+    return sum(null_counts_list)
+
+def calculate_percent_null_for_dataset(null_count_total, total_records_processed, number_of_fields_in_dataset):
+    total_number_of_values_in_dataset = float(total_records_processed*number_of_fields_in_dataset)
+    if total_number_of_values_in_dataset == 0:
+        return 0
+    else:
+        return (float(null_count_total/total_number_of_values_in_dataset)*100)
+
+def write_dataset_results_to_csv(dataset_name, root_file_destination_location, filename, dataset_inspection_results, total_records):
+    file_path = os.path.join(root_file_destination_location, filename)
     if os.path.exists(root_file_destination_location):
         with open(file_path, 'w') as file_handler:
             file_handler.write("{}\n".format(dataset_name))
             file_handler.write("Total Number of Records,{}\n".format(total_records))
+            file_handler.write("Field Name, Null Count, Percent\n")
             for key, value in dataset_inspection_results.items():
                 percent = 0
                 if total_records > 0:
-                    percent = value / total_records
-                file_handler.write("{},{},{}\n".format(key, value, percent))
+                    percent = (value / float(total_records))*100
+                file_handler.write("{},{},{:6.2f}\n".format(key, value, percent))
+    else:
+        print("Directory DNE: {}".format(root_file_destination_location))
+        exit()
+    return
+
+def write_overview_stats_to_csv(root_file_destination_location, filename, dataset_name, dataset_csv_file_path, total_number_of_dataset_records, total_number_of_null_fields=0, percent_null=0):
+    file_path = os.path.join(root_file_destination_location, filename)
+    if os.path.exists(root_file_destination_location):
+        if not os.path.exists(file_path):
+            with open(file_path, "w") as file_handler:
+                file_handler.write("Dataset,File Link,Total Record Count,Total Null Value Count,Percent Null\n")
+        if os.path.exists(file_path):
+            with open(file_path, 'a') as file_handler:
+                file_handler.write("{},{},{},{},{:6.2f}\n".format(dataset_name, dataset_csv_file_path, total_number_of_dataset_records, total_number_of_null_fields,percent_null))
     else:
         print("Directory DNE: {}".format(root_file_destination_location))
         exit()
@@ -120,14 +163,14 @@ def write_results_to_csv(root_file_destination_location, dataset_name, dataset_i
 # FUNCTIONALITY
 def main():
     # Need an inventory of all Maryland Socrata datasets; will gather from the data freshness report.
-    data_freshness_url = build_dataset_url(url_root=root_url_for_dataset_access,
+    data_freshness_url = build_dataset_url(url_root=ROOT_URL_FOR_DATASET_ACCESS,
                                            api_id=DATA_FRESHNESS_REPORT_API_ID[0])
     dict_of_Socrata_Dataset_IDs = build_datasets_inventory(dataset_url=data_freshness_url)
 
     # Need to inventory field names of every dataset and tally null/empty values
     for dataset_name, dataset_api_id in dict_of_Socrata_Dataset_IDs.items():
-        # print("\n{}".format(dataset_name))
         print(dataset_name.upper())
+        dataset_overview_stats[dataset_name] = (0,0)
 
         # Maryland Statewide Vehicle Crashes are excel files, not Socrata records
         if dataset_name.startswith("Maryland Statewide Vehicle Crashes"):
@@ -140,7 +183,9 @@ def main():
         total_count = 0
         more_records_exist_than_response_limit_allows = True
         offset = 0
-        no_null_empty_flag = True
+        no_null_or_empty = True
+        no_fields_served = False
+        number_of_columns_in_dataset = None
 
         # Some datasets will have more records than are returned in a single response; varies with the limit_max value
         while more_records_exist_than_response_limit_allows:
@@ -148,18 +193,19 @@ def main():
 
             # print("cycle start: {}".format(cycle_count))
             # print("Offset: {},  Total Count: {}".format(offset, total_count))
-            url = build_dataset_url(url_root=root_url_for_dataset_access,
+            url = build_dataset_url(url_root=ROOT_URL_FOR_DATASET_ACCESS,
                                     api_id=dataset_api_id,
                                     limit_amount=LIMIT_MAX_AND_OFFSET[0],
                                     offset=offset,
                                     total_count=total_count)
-            # print(url)
+            print(url)
             req = urllib2.Request(url)
 
             try:
                 socrata_url_response = urllib2.urlopen(req)
             except urllib2.URLError as e:
-                no_null_empty_flag = False
+                no_null_or_empty = False
+                no_fields_served = True
                 if hasattr(e, "reason"):
                     print("Failed to reach a server. Reason: {}".format(e.reason))
                     break
@@ -168,71 +214,79 @@ def main():
                     break
             else:
                 try:
-                    # For datasets with a ton of fields it looks like Socrata doesn't return the
+                    # For datasets with a lot of fields it looks like Socrata doesn't return the
                     #   field headers in the response.info() so the X-SODA2-Fields key DNE.
                     dataset_fields_string = socrata_url_response.info()["X-SODA2-Fields"]
-                    field_headers = re.findall("[a-zA-Z0-9_]+", dataset_fields_string)
                 except KeyError as e:
-                    print("\tToo many fields. Socrata suppressed X-SODA2-FIELDS value in response")
-                    no_null_empty_flag = False
+                    print("\tToo many fields. Socrata suppressed X-SODA2-FIELDS value in response.")
+                    no_null_or_empty = False
+                    no_fields_served = True
+                    datasets_with_too_many_fields.add(dataset_name)
                     break
+                field_headers = re.findall("[a-zA-Z0-9_]+", dataset_fields_string)
 
-            if field_headers == None or len(field_headers) == 0:
-                # Datasets like Real Property don't have fields in the response.info() so can't be processed this way
-                print("\t\tNo Fields")
-                no_null_empty_flag = False
-                break
-            else:
-                # Need a dictionary of headers to store count
-                for header in field_headers:
-                    null_count_for_each_field_dict[header] = 0
+            # Need a dictionary of headers to store null count
+            for header in field_headers:
+                null_count_for_each_field_dict[header] = 0
+
+            if number_of_columns_in_dataset == None:
+                number_of_columns_in_dataset = len(field_headers)
 
             html = socrata_url_response.read()
             json_objects = json.loads(html)
-            # print("totalA: {}".format(total_count))
             for record_obj in json_objects:
                 inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
                                                record_dictionary=record_obj)
                 cycle_count += 1
                 total_count += 1
-            # print("totalB: {}".format(total_count))
-            # print("\tCycle Count: {},  MAX: {}".format(cycle_count, LIMIT_MAX_AND_OFFSET[0]))
 
             # Any cycle_count that equals the max limit indicates another request is needed
             if cycle_count == LIMIT_MAX_AND_OFFSET[0]:
-                # print("\tCycle Count: {} was equal to MAX (total={})".format(cycle_count, total_count))
                 sleep(0.3)
-                # print("offset before: {}".format(offset))
                 offset = cycle_count + offset
-                # print("offset after: {}".format(offset))
-
             else:
                 more_records_exist_than_response_limit_allows = False
-        # write_results_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT,
-        #                      dataset_name=dataset_name,
-        #                      dataset_inspection_results=null_count_for_each_field_dict,
-        #                      total_records=total_count)
-        print("\tTotal records processed: {}".format(total_count))  # TESTING
 
+        # Output the results to csv for each dataset containing null values
+        total_number_of_null_values = calculate_total_number_of_empty_values_per_dataset(
+            null_count_for_each_field_dict.values())
 
+        # break #TESTING
 
-        # Is the null counter working? Isolate non-zero counts and print        TESTING
+        if total_number_of_null_values > 0:
+            dataset_name_no_spaces = handle_illegal_characters_in_string(string_with_illegals=dataset_name)
+            dataset_name_spaces_but_no_illegal = handle_illegal_characters_in_string(string_with_illegals=dataset_name,
+                                                                                     spaces_allowed=True)
 
-        for value in null_count_for_each_field_dict.values():
-            if value > 0:
-                # print("\t{}".format(null_count_for_each_field_dict))
-                no_null_empty_flag = False
-                break
-            else:
-                pass
-        if no_null_empty_flag:
-            print("\tNo Null/Empty Values Detected")
+            dataset_csv_filename = build_csv_file_name_with_date(today_date_string=build_today_date_string(),
+                                                                 filename=dataset_name_no_spaces)
 
-        # Limit amount processed        TESTING
-        # counter += 1
-        # if counter > 10:
-        #     exit()
+            dataset_csv_file_path = os.path.join(ROOT_URL_FOR_CSV_OUTPUT,dataset_csv_filename)
+            write_dataset_results_to_csv(dataset_name=dataset_name_spaces_but_no_illegal,
+                                         root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT,
+                                         filename=dataset_csv_filename,
+                                         dataset_inspection_results=null_count_for_each_field_dict,
+                                         total_records=total_count)
 
+            # Append the overview stats for each dataset to the overview stats csv
+            overview_csv_filename = build_csv_file_name_with_date(today_date_string=build_today_date_string(),
+                                                                  filename=OVERVIEW_STATS_FILE_NAME)
+            percent_of_dataset_are_null_values = calculate_percent_null_for_dataset(
+                null_count_total=total_number_of_null_values,
+                total_records_processed=total_count,
+                number_of_fields_in_dataset=number_of_columns_in_dataset)
+            write_overview_stats_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT,
+                                        filename=overview_csv_filename,
+                                        dataset_name=dataset_name_spaces_but_no_illegal,
+                                        dataset_csv_file_path=dataset_csv_file_path,
+                                        total_number_of_dataset_records=total_count,
+                                        total_number_of_null_fields=total_number_of_null_values,
+                                        percent_null=percent_of_dataset_are_null_values)
+
+    # Which datasets have too many fields for Socrata to provide the field names
+    print("The following datasets contained too many fields for the headers to be provided by Socrata.")
+    for item in datasets_with_too_many_fields:
+        print(item)
 
 if __name__ == "__main__":
     main()
