@@ -1,16 +1,23 @@
 """
 What does this do?
+    COMPLETE:
     it inventories any socrata dataset whose api url it is given
     the inventory is of every field in the dataset
     null and empty values are counted for each and every field
     a csv report is generated for every dataset
-    the report contains the date processed, # of fields, total # of records, a null/empty count and percent for each field
+    the report contains the dataset name, total # of records, the name of and null/empty count and percent for each field
+    an overview summary report is generated
+    the overview report contains the dataset name, link to dataset report csv, total # of records, total # null values
+        that value as a percent of the total # of values in the dataset
+
+    PENDING:
     it only processes datasets that have been processed more recently than the last run
     it reads this from the api metadata for the dataset
 
 """
 # TODO: Must handle datasets without a transmitted header/field list
 # TODO: add multithreading/workers for speed
+# TODO: only process datasets processed since last run of this script (assuming this is regularly scheduled
 
 # IMPORTS
 import urllib2
