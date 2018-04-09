@@ -1,5 +1,5 @@
 """
-What does this do?
+What does/should this do?
     COMPLETE:
     it inventories any socrata dataset whose api url it is given
     the inventory is of every field in the dataset
@@ -24,19 +24,20 @@ import urllib2
 import re
 import json
 import os
-import types
+# import types
 from time import sleep
 from datetime import date
 
 # VARIABLES
 DATA_FRESHNESS_REPORT_API_ID = ("t8k3-edvn",)
-ROOT_URL_FOR_DATASET_ACCESS = r"https://data.maryland.gov/resource/"
-ROOT_URL_FOR_CSV_OUTPUT = r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs"
-OVERVIEW_STATS_FILE_NAME = "_OVERVIEW_STATS"
+ROOT_URL_FOR_DATASET_ACCESS = (r"https://data.maryland.gov/resource/",)
+ROOT_URL_FOR_CSV_OUTPUT = (r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs",)
+OVERVIEW_STATS_FILE_NAME = ("_OVERVIEW_STATS",)
+PBOBLEM_DATASETS_FILE_NAME = ("_PROBLEM_DATASETS",)
 LIMIT_MAX_AND_OFFSET = (20000,)
 dataset_exceptions_startswith = ("Maryland Statewide Vehicle Crashes")
 datasets_with_too_many_fields = set()
-dataset_overview_stats = {}
+# dataset_overview_stats = {}
 
 # FUNCTIONS
 #TODO: should I have default values for offset and total_count ?
@@ -157,7 +158,7 @@ def write_overview_stats_to_csv(root_file_destination_location, filename, datase
     if os.path.exists(root_file_destination_location):
         if not os.path.exists(file_path):
             with open(file_path, "w") as file_handler:
-                file_handler.write("Dataset,File Link,Total Record Count,Total Null Value Count,Percent Null\n")
+                file_handler.write("DATASET NAME,FILE PATH,TOTAL RECORD COUNT,TOTAL NULL VALUE COUNT,PERCENT NULL\n")
         if os.path.exists(file_path):
             with open(file_path, 'a') as file_handler:
                 file_handler.write("{},{},{},{},{:6.2f}\n".format(dataset_name, dataset_csv_file_path, total_number_of_dataset_records, total_number_of_null_fields,percent_null))
@@ -165,23 +166,47 @@ def write_overview_stats_to_csv(root_file_destination_location, filename, datase
         print("Directory DNE: {}".format(root_file_destination_location))
         exit()
     return
-
+def write_problematic_datasets_to_csv(root_file_destination_location, filename, dataset_name, message):
+    file_path = os.path.join(root_file_destination_location, filename)
+    if os.path.exists(root_file_destination_location):
+        if not os.path.exists(file_path):
+            with open(file_path, "w") as file_handler:
+                file_handler.write("DATASET NAME,PROBLEM MESSAGE\n")
+        if os.path.exists(file_path):
+            with open(file_path, 'a') as file_handler:
+                file_handler.write("{},{}\n".format(dataset_name, message))
+    else:
+        print("Directory DNE: {}".format(root_file_destination_location))
+        exit()
+    return
 
 # FUNCTIONALITY
 def main():
     # Need an inventory of all Maryland Socrata datasets; will gather from the data freshness report.
-    data_freshness_url = build_dataset_url(url_root=ROOT_URL_FOR_DATASET_ACCESS,
+    data_freshness_url = build_dataset_url(url_root=ROOT_URL_FOR_DATASET_ACCESS[0],
                                            api_id=DATA_FRESHNESS_REPORT_API_ID[0])
     dict_of_Socrata_Dataset_IDs = build_datasets_inventory(dataset_url=data_freshness_url)
 
+    problem_datasets_csv_filename = build_csv_file_name_with_date(
+        today_date_string=build_today_date_string(),
+        filename=PBOBLEM_DATASETS_FILE_NAME[0])
+    overview_csv_filename = build_csv_file_name_with_date(today_date_string=build_today_date_string(),
+                                                          filename=OVERVIEW_STATS_FILE_NAME[0])
     # Need to inventory field names of every dataset and tally null/empty values
     for dataset_name, dataset_api_id in dict_of_Socrata_Dataset_IDs.items():
         print(dataset_name.upper())
-        dataset_overview_stats[dataset_name] = (0,0)
+        # dataset_overview_stats[dataset_name] = (0,0)
+
+        dataset_name_with_spaces_but_no_illegal = handle_illegal_characters_in_string(
+            string_with_illegals=dataset_name,
+            spaces_allowed=True)
 
         # Maryland Statewide Vehicle Crashes are excel files, not Socrata records
         if dataset_name.startswith("Maryland Statewide Vehicle Crashes"):
-            print("\tINTENTIONALLY SKIPPED")
+            write_problematic_datasets_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT[0],
+                                              filename=problem_datasets_csv_filename,
+                                              dataset_name=dataset_name_with_spaces_but_no_illegal,
+                                              message="Intentionally skipped. Dataset was an excel file as of 20180409")
             continue
 
         field_headers = None
@@ -198,14 +223,13 @@ def main():
         while more_records_exist_than_response_limit_allows:
             cycle_count = 0
 
-            # print("cycle start: {}".format(cycle_count))
-            # print("Offset: {},  Total Count: {}".format(offset, total_count))
-            url = build_dataset_url(url_root=ROOT_URL_FOR_DATASET_ACCESS,
+            url = build_dataset_url(url_root=ROOT_URL_FOR_DATASET_ACCESS[0],
                                     api_id=dataset_api_id,
                                     limit_amount=LIMIT_MAX_AND_OFFSET[0],
                                     offset=offset,
                                     total_count=total_count)
             print(url)
+
             req = urllib2.Request(url)
 
             try:
@@ -214,10 +238,16 @@ def main():
                 no_null_or_empty = False
                 no_fields_served = True
                 if hasattr(e, "reason"):
-                    print("Failed to reach a server. Reason: {}".format(e.reason))
+                    write_problematic_datasets_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT[0],
+                                                      filename=problem_datasets_csv_filename,
+                                                      dataset_name=dataset_name_with_spaces_but_no_illegal,
+                                                      message="Failed to reach a server. Reason: {}".format(e.reason))
                     break
                 elif hasattr(e, "code"):
-                    print("The server couldn't fulfill the request. Error Code: {}".format(e.code))
+                    write_problematic_datasets_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT[0],
+                                                      filename=problem_datasets_csv_filename,
+                                                      dataset_name=dataset_name_with_spaces_but_no_illegal,
+                                                      message="The server couldn't fulfill the request. Error Code: {}".format(e.code))
                     break
             else:
                 try:
@@ -225,10 +255,12 @@ def main():
                     #   field headers in the response.info() so the X-SODA2-Fields key DNE.
                     dataset_fields_string = socrata_url_response.info()["X-SODA2-Fields"]
                 except KeyError as e:
-                    print("\tToo many fields. Socrata suppressed X-SODA2-FIELDS value in response.")
+                    write_problematic_datasets_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT[0],
+                                                      filename=problem_datasets_csv_filename,
+                                                      dataset_name=dataset_name_with_spaces_but_no_illegal,
+                                                      message="Too many fields. Socrata suppressed X-SODA2-FIELDS value in response.")
                     no_null_or_empty = False
                     no_fields_served = True
-                    datasets_with_too_many_fields.add(dataset_name)
                     break
                 field_headers = re.findall("[a-zA-Z0-9_]+", dataset_fields_string)
 
@@ -239,8 +271,8 @@ def main():
             if number_of_columns_in_dataset == None:
                 number_of_columns_in_dataset = len(field_headers)
 
-            html = socrata_url_response.read()
-            json_objects = json.loads(html)
+            response_string = socrata_url_response.read()
+            json_objects = json.loads(response_string)
             for record_obj in json_objects:
                 inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
                                                record_dictionary=record_obj)
@@ -254,46 +286,41 @@ def main():
             else:
                 more_records_exist_than_response_limit_allows = False
 
-        # Output the results to csv for each dataset containing null values
+        # Output the results, to csv, for each dataset containing null values
         total_number_of_null_values = calculate_total_number_of_empty_values_per_dataset(
             null_count_for_each_field_dict.values())
-
-        # break #TESTING
-
         if total_number_of_null_values > 0:
-            dataset_name_no_spaces = handle_illegal_characters_in_string(string_with_illegals=dataset_name)
-            dataset_name_spaces_but_no_illegal = handle_illegal_characters_in_string(string_with_illegals=dataset_name,
-                                                                                     spaces_allowed=True)
+
+            # Write each dataset stats to its own csv
+            dataset_name_no_spaces_no_illegal = handle_illegal_characters_in_string(string_with_illegals=dataset_name)
 
             dataset_csv_filename = build_csv_file_name_with_date(today_date_string=build_today_date_string(),
-                                                                 filename=dataset_name_no_spaces)
+                                                                 filename=dataset_name_no_spaces_no_illegal)
 
-            dataset_csv_file_path = os.path.join(ROOT_URL_FOR_CSV_OUTPUT,dataset_csv_filename)
-            write_dataset_results_to_csv(dataset_name=dataset_name_spaces_but_no_illegal,
-                                         root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT,
+            dataset_csv_file_path = os.path.join(ROOT_URL_FOR_CSV_OUTPUT[0],dataset_csv_filename)
+            write_dataset_results_to_csv(dataset_name=dataset_name_with_spaces_but_no_illegal,
+                                         root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT[0],
                                          filename=dataset_csv_filename,
                                          dataset_inspection_results=null_count_for_each_field_dict,
                                          total_records=total_count)
 
             # Append the overview stats for each dataset to the overview stats csv
-            overview_csv_filename = build_csv_file_name_with_date(today_date_string=build_today_date_string(),
-                                                                  filename=OVERVIEW_STATS_FILE_NAME)
             percent_of_dataset_are_null_values = calculate_percent_null_for_dataset(
                 null_count_total=total_number_of_null_values,
                 total_records_processed=total_count,
                 number_of_fields_in_dataset=number_of_columns_in_dataset)
-            write_overview_stats_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT,
+            write_overview_stats_to_csv(root_file_destination_location=ROOT_URL_FOR_CSV_OUTPUT[0],
                                         filename=overview_csv_filename,
-                                        dataset_name=dataset_name_spaces_but_no_illegal,
+                                        dataset_name=dataset_name_with_spaces_but_no_illegal,
                                         dataset_csv_file_path=dataset_csv_file_path,
                                         total_number_of_dataset_records=total_count,
                                         total_number_of_null_fields=total_number_of_null_values,
                                         percent_null=percent_of_dataset_are_null_values)
 
     # Which datasets have too many fields for Socrata to provide the field names
-    print("The following datasets contained too many fields for the headers to be provided by Socrata.")
-    for item in datasets_with_too_many_fields:
-        print(item)
+    # print("The following datasets contained too many fields for the headers to be provided by Socrata.")
+    # for item in datasets_with_too_many_fields:
+    #     print(item)
 
 if __name__ == "__main__":
     main()
