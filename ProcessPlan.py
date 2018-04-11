@@ -16,7 +16,7 @@ What does/should this do?
     it reads the last date processed information from the api metadata for the dataset
 
 """
-# TODO: Handling datasets without a transmitted header/field list?? Confir with Pat.
+# TODO: Handling datasets without a transmitted header/field list?? Confer with Pat.
 # TODO: only process datasets processed since last run of this script (assuming this is regularly scheduled)
 # TODO: compare the results of a round of evaluation against previous rounds to see change in the datasets
 
