@@ -1,20 +1,7 @@
 """
-What does/should this do?
-    COMPLETE:
-    it inventories any socrata dataset whose api url it is given
-    the inventory is of every field in the dataset
-    null and empty values are counted for each and every field
-    a csv report is generated for every dataset
-    the report contains the dataset name, total # of records, the name of and null/empty count and percent for each field
-    an overview summary report is generated
-    the overview report contains the dataset name, link to dataset report csv, total # of records, total # null values
-        that value as a percent of the total # of values in the dataset
-    Handles non-uniform behavior of socrata and datasets. This requires custom handling of unique situations, built as discovered/encountered.
-
-    PENDING:
-    it only processes datasets that have been processed more recently than the last run
-    it reads the last date processed information from the api metadata for the dataset
-
+PENDING:
+only processes datasets that have been processed more recently than the last run
+    reads the last date processed information from the api metadata for the dataset
 """
 # TODO: Handling datasets without a transmitted header/field list?? Confer with Pat.
 # TODO: only process datasets processed since last run of this script (assuming this is regularly scheduled)
@@ -33,7 +20,9 @@ process_start_time = time.time()
 
 # VARIABLES (alphabetic)
 Variable = namedtuple("Variable", ["value"])
+CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE = Variable("MarylandCorrectionalEnterprises_JSON.json")
 DATA_FRESHNESS_REPORT_API_ID = Variable("t8k3-edvn")
+REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE = Variable("RealPropertyHiddenOwner_JSON.json")
 LIMIT_MAX_AND_OFFSET = Variable(20000)
 MD_STATEWIDE_VEHICLE_CRASH_STARTSWITH = Variable("Maryland Statewide Vehicle Crashes")
 OVERVIEW_STATS_FILE_NAME = Variable("_OVERVIEW_STATS")
@@ -41,6 +30,11 @@ PERFORMANCE_SUMMARY_FILE_NAME = Variable("__script_performance_summary")
 PROBLEM_DATASETS_FILE_NAME = Variable("_PROBLEM_DATASETS")
 ROOT_PATH_FOR_CSV_OUTPUT = Variable(r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs") #TESTING
 ROOT_URL_FOR_DATASET_ACCESS = Variable(r"https://data.maryland.gov/resource/")
+
+
+assert os.path.exists(REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE.value)
+assert os.path.exists(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
+
 
 # FUNCTIONS (alphabetic)
 def build_csv_file_name_with_date(today_date_string, filename):
@@ -204,6 +198,34 @@ def write_script_performance_summary(root_file_destination_location, filename, s
         scriptperformancesummaryhandler.write("Problematic datasets count,{}\n".format(problem_dataset_counter))
         time_took = time.time() - start_time
         scriptperformancesummaryhandler.write("Process time (minutes),{:6.2f}\n".format(time_took/60.0))
+
+
+# Stopped while building functionality to handle two mega column datasets
+def read_json_file(file_path):
+    with open(file_path, 'r') as file_handler:
+        filecontents = file_handler.read()
+    return filecontents
+
+def load_json(json_file_contents):
+    return json.loads(json_file_contents)
+
+def grab_field_names_for_mega_columned_datasets(socrata_json_object):
+    column_list = None
+    field_names_list = []
+    try:
+        meta = socrata_json_object['meta']
+        view = meta['view']
+        column_list = view['columns']
+    except Exception as e:
+        print(e)
+    for dictionary in column_list:
+        try:
+            # only hidden fields have the flag key. Thrown key error is used to know the field is visible
+            if 'hidden' in dictionary['flags']:
+                pass
+        except KeyError as ke:
+            field_names_list.append(dictionary['fieldName'])
+    return tuple(field_names_list)
 
 # FUNCTIONALITY
 def main():
@@ -389,7 +411,7 @@ def main():
                                      valid_no_null_dataset_counter=valid_no_null_dataset_counter,
                                      problem_dataset_counter=problem_dataset_counter)
 
-    print("Process time (minutes),{:4.2f}\n".format((time.time()-process_start_time)/60.0))
+    print("Process time (minutes) = {:4.2f}\n".format((time.time()-process_start_time)/60.0))
 
 if __name__ == "__main__":
     main()
