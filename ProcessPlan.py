@@ -203,7 +203,7 @@ def write_script_performance_summary(root_file_destination_location, filename, s
         scriptperformancesummaryhandler.write("Valid datasets without nulls count (no csv),{}\n".format(valid_no_null_dataset_counter))
         scriptperformancesummaryhandler.write("Problematic datasets count,{}\n".format(problem_dataset_counter))
         time_took = time.time() - start_time
-        scriptperformancesummaryhandler.write("Process time (minutes),{:4.2}\n".format(time_took/60.0))
+        scriptperformancesummaryhandler.write("Process time (minutes),{:6.2f}\n".format(time_took/60.0))
 
 # FUNCTIONALITY
 def main():
@@ -388,6 +388,8 @@ def main():
                                      valid_nulls_dataset_counter=valid_nulls_dataset_counter,
                                      valid_no_null_dataset_counter=valid_no_null_dataset_counter,
                                      problem_dataset_counter=problem_dataset_counter)
+
+    print("Process time (minutes),{:4.2f}\n".format((time.time()-process_start_time)/60.0))
 
 if __name__ == "__main__":
     main()
