@@ -43,6 +43,14 @@ assert os.path.exists(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
 def build_csv_file_name_with_date(today_date_string, filename):
     return "{}_{}.csv".format(today_date_string, filename)
 
+def build_data_providers_inventory(freshness_report_json_objects):
+    data_providers_dictionary = {}
+    for record_obj in freshness_report_json_objects:
+        dataset_name = record_obj["dataset_name"]
+        provider_name = record_obj["data_provided_by"]
+        data_providers_dictionary[dataset_name] = os.path.basename(provider_name)
+    return data_providers_dictionary
+
 def build_dataset_url(url_root, api_id, limit_amount, offset, total_count):
     # if the record count exceeds the initial limit then the url must include offset parameter
     if total_count >= LIMIT_MAX_AND_OFFSET.value:
@@ -50,25 +58,12 @@ def build_dataset_url(url_root, api_id, limit_amount, offset, total_count):
     else:
         return "{}{}.json?$limit={}".format(url_root, api_id, limit_amount)
 
-def build_datasets_inventory(dataset_url):
+def build_datasets_inventory(freshness_report_json_objects):
     datasets_dictionary = {}
-    url = dataset_url
-    req = urllib2.Request(url)
-    try:
-        response = urllib2.urlopen(req)
-    except urllib2.URLError as e:
-        if hasattr(e, "reason"):
-            print("build_datasets_inventory(): Failed to reach a server. Reason: {}".format(e.reason))
-        elif hasattr(e, "code"):
-            print("build_datasets_inventory(): The server couldn't fulfill the request. Error Code: {}".format(e.code))
-        exit()
-    else:
-        html = response.read()
-        json_objects = json.loads(html)
-        for record_obj in json_objects:
-            dataset_name = record_obj["dataset_name"]
-            api_id = record_obj["link"]
-            datasets_dictionary[dataset_name] = os.path.basename(api_id)
+    for record_obj in freshness_report_json_objects:
+        dataset_name = record_obj["dataset_name"]
+        api_id = record_obj["link"]
+        datasets_dictionary[dataset_name] = os.path.basename(api_id)
     return datasets_dictionary
 
 def build_today_date_string():
@@ -84,20 +79,28 @@ def calculate_percent_null_for_dataset(null_count_total, total_records_processed
         else:
             return (float(null_count_total/total_number_of_values_in_dataset)*100)
 
+def calculate_time_taken(start_time):
+    return (time.time() - start_time)
+
 def calculate_total_number_of_empty_values_per_dataset(null_counts_list):
     return sum(null_counts_list)
 
-def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=False):
-    if spaces_allowed:
-        re_string = "[a-zA-Z0-9 ]"
+def generate_freshness_report_json_objects(dataset_url):
+    json_objects = None
+    url = dataset_url
+    req = urllib2.Request(url)
+    try:
+        response = urllib2.urlopen(req)
+    except urllib2.URLError as e:
+        if hasattr(e, "reason"):
+            print("build_datasets_inventory(): Failed to reach a server. Reason: {}".format(e.reason))
+        elif hasattr(e, "code"):
+            print("build_datasets_inventory(): The server couldn't fulfill the request. Error Code: {}".format(e.code))
+        exit()
     else:
-        re_string = "[a-zA-Z0-9]"
-    strings_list = re.findall(re_string,string_with_illegals)
-    concatenated = ""
-    for item in strings_list:
-        if len(item) > 0:
-            concatenated = concatenated + item
-    return concatenated
+        html = response.read()
+        json_objects = json.loads(html)
+    return json_objects
 
 def grab_field_names_for_mega_columned_datasets(socrata_json_object):
     column_list = None
@@ -117,6 +120,18 @@ def grab_field_names_for_mega_columned_datasets(socrata_json_object):
             field_names_list_visible.append(dictionary['fieldName'])
     fields_dict = {"visible":field_names_list_visible, "hidden":field_names_list_hidden}
     return fields_dict
+
+def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=False):
+    if spaces_allowed:
+        re_string = "[a-zA-Z0-9 ]"
+    else:
+        re_string = "[a-zA-Z0-9]"
+    strings_list = re.findall(re_string,string_with_illegals)
+    concatenated = ""
+    for item in strings_list:
+        if len(item) > 0:
+            concatenated = concatenated + item
+    return concatenated
 
 def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
     # In the response from a request to Socrata, only the fields with non-null/empty values appear to be included
@@ -166,12 +181,13 @@ def read_json_file(file_path):
         filecontents = file_handler.read()
     return filecontents
 
-def write_dataset_results_to_csv(dataset_name, root_file_destination_location, filename, dataset_inspection_results, total_records):
+def write_dataset_results_to_csv(dataset_name, root_file_destination_location, filename, dataset_inspection_results, total_records, processing_time):
     file_path = os.path.join(root_file_destination_location, filename)
     if os.path.exists(root_file_destination_location):
         with open(file_path, 'w') as file_handler:
             file_handler.write("{}\n".format(dataset_name))
             file_handler.write("RECORD COUNT TOTAL,{}\n".format(total_records))
+            file_handler.write("PROCESSING TIME,{}\n".format(processing_time))
             file_handler.write("FIELD NAME,NULL COUNT,PERCENT\n")
             for key, value in dataset_inspection_results.items():
                 percent = 0
@@ -183,20 +199,21 @@ def write_dataset_results_to_csv(dataset_name, root_file_destination_location, f
         exit()
     return
 
-def write_overview_stats_to_csv(root_file_destination_location, filename, dataset_name, dataset_csv_file_name, total_number_of_dataset_columns, total_number_of_dataset_records, total_number_of_null_fields=0, percent_null=0):
+def write_overview_stats_to_csv(root_file_destination_location, filename, dataset_name, dataset_csv_file_name, total_number_of_dataset_columns, total_number_of_dataset_records, data_provider, total_number_of_null_fields=0, percent_null=0):
     file_path = os.path.join(root_file_destination_location, filename)
     if os.path.exists(root_file_destination_location):
         if not os.path.exists(file_path):
             with open(file_path, "w") as file_handler:
-                file_handler.write("DATASET NAME,FILE NAME,TOTAL COLUMN COUNT,TOTAL RECORD COUNT,TOTAL NULL VALUE COUNT,PERCENT NULL\n")
+                file_handler.write("DATASET NAME,FILE NAME,TOTAL COLUMN COUNT,TOTAL RECORD COUNT,TOTAL NULL VALUE COUNT,PERCENT NULL,DATA PROVIDER\n")
         if os.path.exists(file_path):
             with open(file_path, 'a') as file_handler:
-                file_handler.write("{},{},{},{},{},{:6.2f}\n".format(dataset_name,
+                file_handler.write("{},{},{},{},{},{:6.2f},{}\n".format(dataset_name,
                                                                      dataset_csv_file_name,
                                                                      total_number_of_dataset_columns,
                                                                      total_number_of_dataset_records,
                                                                      total_number_of_null_fields,
-                                                                     percent_null)
+                                                                     percent_null,
+                                                                     data_provider)
                                    )
     else:
         print("Directory DNE: {}".format(root_file_destination_location))
@@ -245,8 +262,10 @@ def main():
                                            limit_amount=LIMIT_MAX_AND_OFFSET.value,
                                            offset=0,
                                            total_count=0)
-    dict_of_socrata_dataset_IDs = build_datasets_inventory(dataset_url=data_freshness_url)
+    freshness_report_json_objects = generate_freshness_report_json_objects(dataset_url=data_freshness_url)
+    dict_of_socrata_dataset_IDs = build_datasets_inventory(freshness_report_json_objects=freshness_report_json_objects)
     number_of_datasets_in_data_freshness_report = len(dict_of_socrata_dataset_IDs)
+    dict_of_socrata_dataset_providers = build_data_providers_inventory(freshness_report_json_objects=freshness_report_json_objects)
 
     # Variables for next lower scope (alphabetic)
     dataset_counter = 0
@@ -256,6 +275,16 @@ def main():
 
     # Need to inventory field names of every dataset and tally null/empty values
     for dataset_name, dataset_api_id in dict_of_socrata_dataset_IDs.items():
+        dataset_start_time = time.time()
+
+        #__________________________________________
+        #TESTING - avoid huge datasets on test runs
+        huge_datasets_api_s = (REAL_PROPERTY_HIDDEN_NAMES_API_ID.value,)
+        if dataset_api_id in huge_datasets_api_s:
+            print("Large Dataset Skipped Because of Size: {}".format(dataset_name))
+            continue
+        #__________________________________________
+
         dataset_counter += 1
 
         # Handle occasional error when writing unicode to string using format. sometimes "-" was problematic
@@ -268,18 +297,18 @@ def main():
             spaces_allowed=True)
 
         # Variables for next lower scope (alphabetic)
-        field_headers = None
-        more_records_exist_than_response_limit_allows = True
         dataset_fields_string = None
+        field_headers = None
         is_problematic = False
         is_special_too_many_headers_dataset = False
         json_file_contents = None
+        more_records_exist_than_response_limit_allows = True
         null_count_for_each_field_dict = {}
         number_of_columns_in_dataset = None
-        socrata_record_offset_value = 0
-        socrata_response_info_key_list = None
         problem_message = None
         problem_resource = None
+        socrata_record_offset_value = 0
+        socrata_response_info_key_list = None
         socrata_url_response = None
         total_record_count = 0
 
@@ -314,7 +343,6 @@ def main():
                 elif hasattr(e, "code"):
                     problem_message = "The server couldn't fulfill the request. Error Code: {}".format(e.code)
                     break
-            # else:
 
             # For datasets with a lot of fields it looks like Socrata doesn't return the
             #   field headers in the response.info() so the X-SODA2-Fields key DNE.
@@ -337,7 +365,7 @@ def main():
             # If Socrata didn't send the headers see if the dataset is one of the two known to be too big
             if field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == REAL_PROPERTY_HIDDEN_NAMES_API_ID.value:
                 json_file_contents = read_json_file(REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE.value)
-            elif field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == CORRECTIONAL_ENTERPRISES_EMPLOYEES_API_ID:
+            elif field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == CORRECTIONAL_ENTERPRISES_EMPLOYEES_API_ID.value:
                 json_file_contents = read_json_file(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
             elif field_headers == None and is_special_too_many_headers_dataset:
                 # In case a new previously unknown dataset comes along with too many fields for transfer
@@ -367,7 +395,7 @@ def main():
 
             response_string = socrata_url_response.read()
             json_objects = json.loads(response_string)
-            # Some datasets are html or other but socrata returns an empty object rather than a json object with
+            # Some datasets are html or other type but socrata returns an empty object rather than a json object with
             #   reason or code. These datasets are then not recognized as problematic and throw off the tracking counts.
             if len(json_objects) == 0:
                 problem_message = "Response json object was empty"
@@ -375,6 +403,7 @@ def main():
                 is_problematic = True
                 break
 
+            #TODO: Use multithreading for the following task ??
             for record_obj in json_objects:
                 inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
                                                record_dictionary=record_obj)
@@ -417,7 +446,8 @@ def main():
                                          root_file_destination_location=ROOT_PATH_FOR_CSV_OUTPUT.value,
                                          filename=dataset_csv_filename,
                                          dataset_inspection_results=null_count_for_each_field_dict,
-                                         total_records=total_record_count)
+                                         total_records=total_record_count,
+                                         processing_time=calculate_time_taken(dataset_start_time))
 
             # Append the overview stats for each dataset to the overview stats csv
             write_overview_stats_to_csv(root_file_destination_location=ROOT_PATH_FOR_CSV_OUTPUT.value,
@@ -426,6 +456,7 @@ def main():
                                         dataset_csv_file_name=dataset_csv_filename,
                                         total_number_of_dataset_columns=number_of_columns_in_dataset,
                                         total_number_of_dataset_records=total_record_count,
+                                        data_provider=dict_of_socrata_dataset_providers[dataset_name],
                                         total_number_of_null_fields=total_number_of_null_values,
                                         percent_null=percent_of_dataset_are_null_values)
         else:
@@ -438,8 +469,10 @@ def main():
                                         dataset_csv_file_name=None,
                                         total_number_of_dataset_columns=number_of_columns_in_dataset,
                                         total_number_of_dataset_records=total_record_count,
+                                        data_provider=dict_of_socrata_dataset_providers[dataset_name],
                                         total_number_of_null_fields=total_number_of_null_values,
-                                        percent_null=percent_of_dataset_are_null_values)
+                                        percent_null=percent_of_dataset_are_null_values
+                                        )
 
     performance_summary_filename = build_csv_file_name_with_date(build_today_date_string(), PERFORMANCE_SUMMARY_FILE_NAME.value)
     write_script_performance_summary(root_file_destination_location=ROOT_PATH_FOR_CSV_OUTPUT.value,
