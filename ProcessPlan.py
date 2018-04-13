@@ -6,6 +6,7 @@ only processes datasets that have been processed more recently than the last run
 # TODO: Handling datasets without a transmitted header/field list?? Confer with Pat.
 # TODO: only process datasets processed since last run of this script (assuming this is regularly scheduled)
 # TODO: compare the results of a round of evaluation against previous rounds to see change in the datasets
+# TODO: Include Provided By agency info from freshness report in output csv's
 
 # IMPORTS
 from collections import namedtuple
@@ -20,8 +21,10 @@ process_start_time = time.time()
 
 # VARIABLES (alphabetic)
 Variable = namedtuple("Variable", ["value"])
+CORRECTIONAL_ENTERPRISES_EMPLOYEES_API_ID = Variable("mux9-y6mb")
 CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE = Variable("MarylandCorrectionalEnterprises_JSON.json")
 DATA_FRESHNESS_REPORT_API_ID = Variable("t8k3-edvn")
+REAL_PROPERTY_HIDDEN_NAMES_API_ID = Variable("ed4q-f8tm")
 REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE = Variable("RealPropertyHiddenOwner_JSON.json")
 LIMIT_MAX_AND_OFFSET = Variable(20000)
 MD_STATEWIDE_VEHICLE_CRASH_STARTSWITH = Variable("Maryland Statewide Vehicle Crashes")
@@ -96,6 +99,25 @@ def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=Fal
             concatenated = concatenated + item
     return concatenated
 
+def grab_field_names_for_mega_columned_datasets(socrata_json_object):
+    column_list = None
+    field_names_list_visible = []
+    field_names_list_hidden = []
+    try:
+        meta = socrata_json_object['meta']
+        view = meta['view']
+        column_list = view['columns']
+    except Exception as e:
+        print("Problem accessing json dictionaries: {}".format(e))
+    for dictionary in column_list:
+        temp_field_list = dictionary.keys()
+        if 'flags' in temp_field_list:
+            field_names_list_hidden.append(dictionary['fieldName'])
+        else:
+            field_names_list_visible.append(dictionary['fieldName'])
+    fields_dict = {"visible":field_names_list_visible, "hidden":field_names_list_hidden}
+    return fields_dict
+
 def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
     # In the response from a request to Socrata, only the fields with non-null/empty values appear to be included
     record_dictionary_fields = record_dictionary.keys()
@@ -135,6 +157,14 @@ def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
             # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
             field_null_count_dict[field_name] += 1
     return
+
+def load_json(json_file_contents):
+    return json.loads(json_file_contents)
+
+def read_json_file(file_path):
+    with open(file_path, 'r') as file_handler:
+        filecontents = file_handler.read()
+    return filecontents
 
 def write_dataset_results_to_csv(dataset_name, root_file_destination_location, filename, dataset_inspection_results, total_records):
     file_path = os.path.join(root_file_destination_location, filename)
@@ -199,34 +229,6 @@ def write_script_performance_summary(root_file_destination_location, filename, s
         time_took = time.time() - start_time
         scriptperformancesummaryhandler.write("Process time (minutes),{:6.2f}\n".format(time_took/60.0))
 
-
-# Stopped while building functionality to handle two mega column datasets
-def read_json_file(file_path):
-    with open(file_path, 'r') as file_handler:
-        filecontents = file_handler.read()
-    return filecontents
-
-def load_json(json_file_contents):
-    return json.loads(json_file_contents)
-
-def grab_field_names_for_mega_columned_datasets(socrata_json_object):
-    column_list = None
-    field_names_list = []
-    try:
-        meta = socrata_json_object['meta']
-        view = meta['view']
-        column_list = view['columns']
-    except Exception as e:
-        print(e)
-    for dictionary in column_list:
-        try:
-            # only hidden fields have the flag key. Thrown key error is used to know the field is visible
-            if 'hidden' in dictionary['flags']:
-                pass
-        except KeyError as ke:
-            field_names_list.append(dictionary['fieldName'])
-    return tuple(field_names_list)
-
 # FUNCTIONALITY
 def main():
 
@@ -268,10 +270,14 @@ def main():
         # Variables for next lower scope (alphabetic)
         field_headers = None
         more_records_exist_than_response_limit_allows = True
+        dataset_fields_string = None
         is_problematic = False
+        is_special_too_many_headers_dataset = False
+        json_file_contents = None
         null_count_for_each_field_dict = {}
         number_of_columns_in_dataset = None
         socrata_record_offset_value = 0
+        socrata_response_info_key_list = None
         problem_message = None
         problem_resource = None
         socrata_url_response = None
@@ -280,7 +286,8 @@ def main():
         # Some datasets will have more records than are returned in a single response; varies with the limit_max value
         while more_records_exist_than_response_limit_allows:
 
-            # Maryland Statewide Vehicle Crashes are excel files, not Socrata records, but they will return empty json objects endlessly
+            # Maryland Statewide Vehicle Crashes are excel files, not Socrata records,
+            #   but they will return empty json objects endlessly
             if dataset_name.startswith(MD_STATEWIDE_VEHICLE_CRASH_STARTSWITH.value):
                 problem_message = "Intentionally skipped. Dataset was an excel file as of 20180409. Call to Socrata endlessly returns empty json objects."
                 is_problematic = True
@@ -294,10 +301,10 @@ def main():
                                     total_count=total_record_count)
             print(url)
 
-            req = urllib2.Request(url)
+            request = urllib2.Request(url)
 
             try:
-                socrata_url_response = urllib2.urlopen(req)
+                socrata_url_response = urllib2.urlopen(request)
             except urllib2.URLError as e:
                 problem_resource = url
                 is_problematic = True
@@ -307,17 +314,49 @@ def main():
                 elif hasattr(e, "code"):
                     problem_message = "The server couldn't fulfill the request. Error Code: {}".format(e.code)
                     break
+            # else:
+
+            # For datasets with a lot of fields it looks like Socrata doesn't return the
+            #   field headers in the response.info() so the X-SODA2-Fields key DNE.
+            # Only need to get the list of socrata response keys the first time through
+            if socrata_response_info_key_list == None:
+                socrata_response_info_key_list = []
+                for key in socrata_url_response.info().keys():
+                    socrata_response_info_key_list.append(key.lower())
             else:
-                try:
-                    # For datasets with a lot of fields it looks like Socrata doesn't return the
-                    #   field headers in the response.info() so the X-SODA2-Fields key DNE.
-                    dataset_fields_string = socrata_url_response.info()["X-SODA2-Fields"]
-                except KeyError as e:
-                    problem_message = "Too many fields. Socrata suppressed X-SODA2-FIELDS value in response."
-                    problem_resource = url
-                    is_problematic = True
-                    break
+                pass
+
+            # Only need to get the field headers the first time through
+            if dataset_fields_string == None and "x-soda2-fields" in socrata_response_info_key_list:
+                dataset_fields_string = socrata_url_response.info()["X-SODA2-Fields"]
+            elif dataset_fields_string == None and "x-soda2-fields" not in socrata_response_info_key_list:
+                is_special_too_many_headers_dataset = True
+            else:
+                pass
+
+            # If Socrata didn't send the headers see if the dataset is one of the two known to be too big
+            if field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == REAL_PROPERTY_HIDDEN_NAMES_API_ID.value:
+                json_file_contents = read_json_file(REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE.value)
+            elif field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == CORRECTIONAL_ENTERPRISES_EMPLOYEES_API_ID:
+                json_file_contents = read_json_file(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
+            elif field_headers == None and is_special_too_many_headers_dataset:
+                # In case a new previously unknown dataset comes along with too many fields for transfer
+                problem_message = "Too many fields. Socrata suppressed X-SODA2-FIELDS value in response."
+                problem_resource = url
+                is_problematic = True
+                break
+            elif field_headers == None:
                 field_headers = re.findall("[a-zA-Z0-9_]+", dataset_fields_string)
+            else:
+                pass
+
+            # If special, first time through load the field names from their pre-made json files.
+            if json_file_contents != None:
+                json_loaded = load_json(json_file_contents)
+                field_names_dictionary = grab_field_names_for_mega_columned_datasets(json_loaded)
+                field_headers = field_names_dictionary["visible"]
+            else:
+                pass
 
             # Need a dictionary of headers to store null count
             for header in field_headers:
@@ -358,6 +397,7 @@ def main():
             null_count_total=total_number_of_null_values,
             total_records_processed=total_record_count,
             number_of_fields_in_dataset=number_of_columns_in_dataset)
+
         if is_problematic:
             problem_dataset_counter += 1
             write_problematic_datasets_to_csv(root_file_destination_location=ROOT_PATH_FOR_CSV_OUTPUT.value,
