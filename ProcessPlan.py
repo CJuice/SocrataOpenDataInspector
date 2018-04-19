@@ -3,10 +3,8 @@ PENDING:
 only processes datasets that have been processed more recently than the last run
     reads the last date processed information from the api metadata for the dataset
 """
-# TODO: Handling datasets without a transmitted header/field list?? Confer with Pat.
-# TODO: only process datasets processed since last run of this script (assuming this is regularly scheduled)
-# TODO: compare the results of a round of evaluation against previous rounds to see change in the datasets
-# TODO: Include Provided By agency info from freshness report in output csv's
+# TODO: only process datasets processed since last run of this script (assuming this is regularly scheduled) ??
+# TODO: compare the results of a round of evaluation against previous rounds to see change in the datasets ??
 
 # IMPORTS
 from collections import namedtuple
@@ -41,9 +39,11 @@ assert os.path.exists(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
 
 # FUNCTIONS (alphabetic)
 def build_csv_file_name_with_date(today_date_string, filename):
+    """"""
     return "{}_{}.csv".format(today_date_string, filename)
 
 def build_data_providers_inventory(freshness_report_json_objects):
+    """"""
     data_providers_dictionary = {}
     for record_obj in freshness_report_json_objects:
         dataset_name = record_obj["dataset_name"]
@@ -52,6 +52,7 @@ def build_data_providers_inventory(freshness_report_json_objects):
     return data_providers_dictionary
 
 def build_dataset_url(url_root, api_id, limit_amount, offset, total_count):
+    """"""
     # if the record count exceeds the initial limit then the url must include offset parameter
     if total_count >= LIMIT_MAX_AND_OFFSET.value:
         return "{}{}.json?$limit={}&$offset={}".format(url_root, api_id, limit_amount, offset)
@@ -59,6 +60,7 @@ def build_dataset_url(url_root, api_id, limit_amount, offset, total_count):
         return "{}{}.json?$limit={}".format(url_root, api_id, limit_amount)
 
 def build_datasets_inventory(freshness_report_json_objects):
+    """"""
     datasets_dictionary = {}
     for record_obj in freshness_report_json_objects:
         dataset_name = record_obj["dataset_name"]
@@ -67,9 +69,11 @@ def build_datasets_inventory(freshness_report_json_objects):
     return datasets_dictionary
 
 def build_today_date_string():
+    """"""
     return "{:%Y%m%d}".format(date.today())
 
 def calculate_percent_null_for_dataset(null_count_total, total_records_processed, number_of_fields_in_dataset):
+    """"""
     if number_of_fields_in_dataset is None:
         return 0
     else:
@@ -80,12 +84,15 @@ def calculate_percent_null_for_dataset(null_count_total, total_records_processed
             return (float(null_count_total/total_number_of_values_in_dataset)*100)
 
 def calculate_time_taken(start_time):
+    """"""
     return (time.time() - start_time)
 
 def calculate_total_number_of_empty_values_per_dataset(null_counts_list):
+    """"""
     return sum(null_counts_list)
 
 def generate_freshness_report_json_objects(dataset_url):
+    """"""
     json_objects = None
     url = dataset_url
     req = urllib2.Request(url)
@@ -103,6 +110,7 @@ def generate_freshness_report_json_objects(dataset_url):
     return json_objects
 
 def grab_field_names_for_mega_columned_datasets(socrata_json_object):
+    """"""
     column_list = None
     field_names_list_visible = []
     field_names_list_hidden = []
@@ -122,6 +130,7 @@ def grab_field_names_for_mega_columned_datasets(socrata_json_object):
     return fields_dict
 
 def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=False):
+    """"""
     if spaces_allowed:
         re_string = "[a-zA-Z0-9 ]"
     else:
@@ -134,6 +143,7 @@ def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=Fal
     return concatenated
 
 def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
+    """"""
     # In the response from a request to Socrata, only the fields with non-null/empty values appear to be included
     record_dictionary_fields = record_dictionary.keys()
     for field_name in field_null_count_dict.keys():
@@ -174,14 +184,17 @@ def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
     return
 
 def load_json(json_file_contents):
+    """"""
     return json.loads(json_file_contents)
 
 def read_json_file(file_path):
+    """"""
     with open(file_path, 'r') as file_handler:
         filecontents = file_handler.read()
     return filecontents
 
 def write_dataset_results_to_csv(dataset_name, root_file_destination_location, filename, dataset_inspection_results, total_records, processing_time):
+    """"""
     file_path = os.path.join(root_file_destination_location, filename)
     if os.path.exists(root_file_destination_location):
         with open(file_path, 'w') as file_handler:
@@ -200,6 +213,7 @@ def write_dataset_results_to_csv(dataset_name, root_file_destination_location, f
     return
 
 def write_overview_stats_to_csv(root_file_destination_location, filename, dataset_name, dataset_csv_file_name, total_number_of_dataset_columns, total_number_of_dataset_records, data_provider, total_number_of_null_fields=0, percent_null=0):
+    """"""
     file_path = os.path.join(root_file_destination_location, filename)
     if os.path.exists(root_file_destination_location):
         if not os.path.exists(file_path):
@@ -221,6 +235,7 @@ def write_overview_stats_to_csv(root_file_destination_location, filename, datase
     return
 
 def write_problematic_datasets_to_csv(root_file_destination_location, filename, dataset_name, message, resource=None):
+    """"""
     file_path = os.path.join(root_file_destination_location, filename)
     if os.path.exists(root_file_destination_location):
         if not os.path.exists(file_path):
@@ -235,6 +250,7 @@ def write_problematic_datasets_to_csv(root_file_destination_location, filename, 
     return
 
 def write_script_performance_summary(root_file_destination_location, filename, start_time, number_of_datasets_in_data_freshness_report, dataset_counter, valid_nulls_dataset_counter, valid_no_null_dataset_counter, problem_dataset_counter):
+    """"""
     file_path = os.path.join(root_file_destination_location, filename)
     with open(file_path, 'w') as scriptperformancesummaryhandler:
         scriptperformancesummaryhandler.write("Date,{}\n".format(build_today_date_string()))
@@ -248,6 +264,7 @@ def write_script_performance_summary(root_file_destination_location, filename, s
 
 # FUNCTIONALITY
 def main():
+    """"""
 
     # Initiate csv report files
     problem_datasets_csv_filename = build_csv_file_name_with_date(
@@ -277,13 +294,13 @@ def main():
     for dataset_name, dataset_api_id in dict_of_socrata_dataset_IDs.items():
         dataset_start_time = time.time()
 
-        #__________________________________________
+#____________________________________________________________________________________________________________
         #TESTING - avoid huge datasets on test runs
         huge_datasets_api_s = (REAL_PROPERTY_HIDDEN_NAMES_API_ID.value,)
         if dataset_api_id in huge_datasets_api_s:
             print("Large Dataset Skipped Because of Size: {}".format(dataset_name))
             continue
-        #__________________________________________
+#____________________________________________________________________________________________________________
 
         dataset_counter += 1
 
