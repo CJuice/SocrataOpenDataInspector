@@ -14,6 +14,9 @@ import os
 import re
 import time
 import urllib2
+from functools import partial
+from multiprocessing import Pool
+from multiprocessing.pool import ThreadPool
 
 process_start_time = time.time()
 
@@ -42,14 +45,10 @@ def build_csv_file_name_with_date(today_date_string, filename):
     """"""
     return "{}_{}.csv".format(today_date_string, filename)
 
-def build_data_providers_inventory(freshness_report_json_objects):
+def build_data_providers_inventory(data_providers_dictionary, cleaned_dataset_name, cleaned_provider_name):
     """"""
-    data_providers_dictionary = {}
-    for record_obj in freshness_report_json_objects:
-        dataset_name = record_obj["dataset_name"]
-        provider_name = record_obj["data_provided_by"]
-        data_providers_dictionary[dataset_name] = os.path.basename(provider_name)
-    return data_providers_dictionary
+    data_providers_dictionary[cleaned_dataset_name] = os.path.basename(cleaned_provider_name)
+    return
 
 def build_dataset_url(url_root, api_id, limit_amount, offset, total_count):
     """"""
@@ -150,7 +149,6 @@ def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
         # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
         if field_name not in record_dictionary_fields:
             field_null_count_dict[field_name] += 1
-
         # if field_name in record_dictionary_fields:
             # If we rely on Socrata to filter out null values and not return a field if it is null then we don't
             #   need to check the data and can simply look at the included field names. The code in this "if" statement
@@ -286,7 +284,15 @@ def main():
     freshness_report_json_objects = generate_freshness_report_json_objects(dataset_url=data_freshness_url)
     dict_of_socrata_dataset_IDs = build_datasets_inventory(freshness_report_json_objects=freshness_report_json_objects)
     number_of_datasets_in_data_freshness_report = len(dict_of_socrata_dataset_IDs)
-    dict_of_socrata_dataset_providers = build_data_providers_inventory(freshness_report_json_objects=freshness_report_json_objects)
+    dict_of_socrata_dataset_providers = {}
+    for record_obj in freshness_report_json_objects:
+        dataset_name = handle_illegal_characters_in_string(string_with_illegals=record_obj["dataset_name"],
+                                                           spaces_allowed=True)
+        provider_name = handle_illegal_characters_in_string(string_with_illegals=record_obj["data_provided_by"],
+                                                            spaces_allowed=True)
+        build_data_providers_inventory(data_providers_dictionary=dict_of_socrata_dataset_providers,
+                                       cleaned_dataset_name=dataset_name,
+                                       cleaned_provider_name=provider_name)
 
     # Variables for next lower scope (alphabetic)
     dataset_counter = 0
@@ -309,7 +315,7 @@ def main():
         dataset_counter += 1
 
         # Handle occasional error when writing unicode to string using format. sometimes "-" was problematic
-        dataset_name = dataset_name.encode("utf8")
+        dataset_name = handle_illegal_characters_in_string(dataset_name.encode("utf8"), spaces_allowed=True)
         dataset_api_id = dataset_api_id.encode("utf8")
         print("{}: {} ............. {}".format(dataset_counter, dataset_name.upper(), dataset_api_id))
 
@@ -415,22 +421,36 @@ def main():
                 number_of_columns_in_dataset = len(field_headers)
 
             response_string = socrata_url_response.read()
-            json_objects = json.loads(response_string)
+            json_objects_pythondict = json.loads(response_string)
 
             # Some datasets are html or other type but socrata returns an empty object rather than a json object with
             #   reason or code. These datasets are then not recognized as problematic and throw off the tracking counts.
-            if len(json_objects) == 0:
+            if len(json_objects_pythondict) == 0:
                 problem_message = "Response json object was empty"
                 problem_resource = url
                 is_problematic = True
                 break
 
             #TODO: Use multithreading or multiprocessing for the following task ??
-            for record_obj in json_objects:
-                inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
-                                               record_dictionary=record_obj)
-                cycle_record_count += 1
-                total_record_count += 1
+            partial_function_for_multithreading = partial(inspect_record_for_null_values,
+                                                          null_count_for_each_field_dict)
+
+            # FIXME: no null records are "seen" and no csv files for datasets are written when multiprocessor approach is used
+            # pool = Pool()
+
+            pool = ThreadPool(8)
+            pool.map(partial_function_for_multithreading, json_objects_pythondict)
+            pool.close()
+            pool.join()
+            record_count_increase = len(json_objects_pythondict)
+            cycle_record_count += record_count_increase
+            total_record_count += record_count_increase
+
+            # for record_obj in json_objects_pythondict:
+            #     inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
+            #                                    record_dictionary=record_obj)
+            #     cycle_record_count += 1
+            #     total_record_count += 1
 
             # Any cycle_record_count that equals the max limit indicates another request is needed
             if cycle_record_count == LIMIT_MAX_AND_OFFSET.value:
