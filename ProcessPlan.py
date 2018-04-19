@@ -147,7 +147,11 @@ def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
     # In the response from a request to Socrata, only the fields with non-null/empty values appear to be included
     record_dictionary_fields = record_dictionary.keys()
     for field_name in field_null_count_dict.keys():
-        if field_name in record_dictionary_fields:
+        # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
+        if field_name not in record_dictionary_fields:
+            field_null_count_dict[field_name] += 1
+
+        # if field_name in record_dictionary_fields:
             # If we rely on Socrata to filter out null values and not return a field if it is null then we don't
             #   need to check the data and can simply look at the included field names. The code in this "if" statement
             #   checked the data values for null but doesn't seem necessary given Socrata appears to
@@ -177,10 +181,10 @@ def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
             #     field_null_count_dict[field_name] += 1
             # else:
             #     pass
-            pass
-        else:
+            # pass
+        # else:
             # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
-            field_null_count_dict[field_name] += 1
+            # field_null_count_dict[field_name] += 1
     return
 
 def load_json(json_file_contents):
@@ -412,6 +416,7 @@ def main():
 
             response_string = socrata_url_response.read()
             json_objects = json.loads(response_string)
+
             # Some datasets are html or other type but socrata returns an empty object rather than a json object with
             #   reason or code. These datasets are then not recognized as problematic and throw off the tracking counts.
             if len(json_objects) == 0:
@@ -420,7 +425,7 @@ def main():
                 is_problematic = True
                 break
 
-            #TODO: Use multithreading for the following task ??
+            #TODO: Use multithreading or multiprocessing for the following task ??
             for record_obj in json_objects:
                 inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
                                                record_dictionary=record_obj)
