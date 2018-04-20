@@ -32,9 +32,9 @@ MD_STATEWIDE_VEHICLE_CRASH_STARTSWITH = Variable("Maryland Statewide Vehicle Cra
 OVERVIEW_STATS_FILE_NAME = Variable("_OVERVIEW_STATS")
 PERFORMANCE_SUMMARY_FILE_NAME = Variable("__script_performance_summary")
 PROBLEM_DATASETS_FILE_NAME = Variable("_PROBLEM_DATASETS")
-ROOT_PATH_FOR_CSV_OUTPUT = Variable(r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs") #TESTING
+ROOT_PATH_FOR_CSV_OUTPUT = Variable(r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs")              # TESTING
 ROOT_URL_FOR_DATASET_ACCESS = Variable(r"https://data.maryland.gov/resource/")
-
+THREAD_COUNT = Variable(8)
 
 assert os.path.exists(REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE.value)
 assert os.path.exists(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
@@ -307,8 +307,8 @@ def main():
 #____________________________________________________________________________________________________________
         #TESTING - avoid huge datasets on test runs
         huge_datasets_api_s = (REAL_PROPERTY_HIDDEN_NAMES_API_ID.value,)
-        if dataset_api_id in huge_datasets_api_s:
-            print("Large Dataset Skipped Because of Size: {}".format(dataset_name))
+        if dataset_api_id not in huge_datasets_api_s:
+            print("Dataset Skipped Intentionally (TESTING): {}".format(dataset_name))
             continue
 #____________________________________________________________________________________________________________
 
@@ -431,26 +431,17 @@ def main():
                 is_problematic = True
                 break
 
-            #TODO: Use multithreading or multiprocessing for the following task ??
             partial_function_for_multithreading = partial(inspect_record_for_null_values,
                                                           null_count_for_each_field_dict)
-
             # FIXME: no null records are "seen" and no csv files for datasets are written when multiprocessor approach is used
             # pool = Pool()
-
-            pool = ThreadPool(8)
+            pool = ThreadPool(THREAD_COUNT.value)
             pool.map(partial_function_for_multithreading, json_objects_pythondict)
             pool.close()
             pool.join()
             record_count_increase = len(json_objects_pythondict)
             cycle_record_count += record_count_increase
             total_record_count += record_count_increase
-
-            # for record_obj in json_objects_pythondict:
-            #     inspect_record_for_null_values(field_null_count_dict=null_count_for_each_field_dict,
-            #                                    record_dictionary=record_obj)
-            #     cycle_record_count += 1
-            #     total_record_count += 1
 
             # Any cycle_record_count that equals the max limit indicates another request is needed
             if cycle_record_count == LIMIT_MAX_AND_OFFSET.value:
