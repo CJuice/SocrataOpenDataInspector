@@ -149,40 +149,6 @@ def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
         # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
         if field_name not in record_dictionary_fields:
             field_null_count_dict[field_name] += 1
-        # if field_name in record_dictionary_fields:
-            # If we rely on Socrata to filter out null values and not return a field if it is null then we don't
-            #   need to check the data and can simply look at the included field names. The code in this "if" statement
-            #   checked the data values for null but doesn't seem necessary given Socrata appears to
-            #   prefilter null/empty data.
-
-            # data_value_of_focus = None
-            # try:
-            #     data_value_of_focus = record_dictionary[field_name]
-            #
-            #     # Handle dictionaries (location_1), ints, lists, that cause errors when encoding
-            #     if isinstance(data_value_of_focus, types.StringType):
-            #         data_value_of_focus = data_value_of_focus.encode("utf8")
-            #     elif isinstance(data_value_of_focus, types.DictType):
-            #         data_value_of_focus = "value is a dictionary"
-            #     elif isinstance(data_value_of_focus, types.IntType):
-            #         data_value_of_focus = str(data_value_of_focus)
-            #     else:
-            #         data_value_of_focus = data_value_of_focus.encode("utf8")
-            # except UnicodeEncodeError as e:
-            #     print(e)
-            # except AttributeError as e:
-            #     # print("AttributeError: key={}, key type={}\n\t{}".format(field_name, type(field_name),
-            #     #                                                          record_dictionary))
-            #     print(e)
-            #
-            # if data_value_of_focus == None or data_value_of_focus.strip() == "" or len(data_value_of_focus) == 0:
-            #     field_null_count_dict[field_name] += 1
-            # else:
-            #     pass
-            # pass
-        # else:
-            # It appears Socrata does not send empty fields so absence will be presumed to indicate empty/null values
-            # field_null_count_dict[field_name] += 1
     return
 
 def load_json(json_file_contents):
@@ -286,13 +252,15 @@ def main():
     number_of_datasets_in_data_freshness_report = len(dict_of_socrata_dataset_IDs)
     dict_of_socrata_dataset_providers = {}
     for record_obj in freshness_report_json_objects:
-        dataset_name = handle_illegal_characters_in_string(string_with_illegals=record_obj["dataset_name"],
+        data_freshness_dataset_name = (record_obj["dataset_name"]).encode("utf8")
+        data_freshness_report_dataset_name_noillegal = handle_illegal_characters_in_string(string_with_illegals=data_freshness_dataset_name,
                                                            spaces_allowed=True)
-        provider_name = handle_illegal_characters_in_string(string_with_illegals=record_obj["data_provided_by"],
+        data_freshness_data_provider = (record_obj["data_provided_by"]).encode("utf8")
+        provider_name_noillegal = handle_illegal_characters_in_string(string_with_illegals=data_freshness_data_provider,
                                                             spaces_allowed=True)
         build_data_providers_inventory(data_providers_dictionary=dict_of_socrata_dataset_providers,
-                                       cleaned_dataset_name=dataset_name,
-                                       cleaned_provider_name=provider_name)
+                                       cleaned_dataset_name=data_freshness_report_dataset_name_noillegal,
+                                       cleaned_provider_name=provider_name_noillegal)
 
     # Variables for next lower scope (alphabetic)
     dataset_counter = 0
@@ -303,25 +271,23 @@ def main():
     # Need to inventory field names of every dataset and tally null/empty values
     for dataset_name, dataset_api_id in dict_of_socrata_dataset_IDs.items():
         dataset_start_time = time.time()
-
+        # Handle occasional error when writing unicode to string using format. sometimes "-" was problematic
+        dataset_name_with_spaces_but_no_illegal = handle_illegal_characters_in_string(
+            string_with_illegals=dataset_name.encode("utf8"),
+            spaces_allowed=True)
+        dataset_api_id = dataset_api_id.encode("utf8")
 #____________________________________________________________________________________________________________
         #TESTING - avoid huge datasets on test runs
         huge_datasets_api_s = (REAL_PROPERTY_HIDDEN_NAMES_API_ID.value,)
-        if dataset_api_id not in huge_datasets_api_s:
-            print("Dataset Skipped Intentionally (TESTING): {}".format(dataset_name))
+        if dataset_api_id in huge_datasets_api_s:
+            print("Dataset Skipped Intentionally (TESTING): {}".format(dataset_name_with_spaces_but_no_illegal))
             continue
 #____________________________________________________________________________________________________________
 
         dataset_counter += 1
+        print("{}: {} ............. {}".format(dataset_counter, dataset_name_with_spaces_but_no_illegal.upper(), dataset_api_id))
 
-        # Handle occasional error when writing unicode to string using format. sometimes "-" was problematic
-        dataset_name = handle_illegal_characters_in_string(dataset_name.encode("utf8"), spaces_allowed=True)
-        dataset_api_id = dataset_api_id.encode("utf8")
-        print("{}: {} ............. {}".format(dataset_counter, dataset_name.upper(), dataset_api_id))
 
-        dataset_name_with_spaces_but_no_illegal = handle_illegal_characters_in_string(
-            string_with_illegals=dataset_name,
-            spaces_allowed=True)
 
         # Variables for next lower scope (alphabetic)
         dataset_fields_string = None
@@ -489,7 +455,7 @@ def main():
                                         dataset_csv_file_name=dataset_csv_filename,
                                         total_number_of_dataset_columns=number_of_columns_in_dataset,
                                         total_number_of_dataset_records=total_record_count,
-                                        data_provider=dict_of_socrata_dataset_providers[dataset_name],
+                                        data_provider=dict_of_socrata_dataset_providers[dataset_name_with_spaces_but_no_illegal],
                                         total_number_of_null_fields=total_number_of_null_values,
                                         percent_null=percent_of_dataset_are_null_values)
         else:
@@ -502,7 +468,7 @@ def main():
                                         dataset_csv_file_name=None,
                                         total_number_of_dataset_columns=number_of_columns_in_dataset,
                                         total_number_of_dataset_records=total_record_count,
-                                        data_provider=dict_of_socrata_dataset_providers[dataset_name],
+                                        data_provider=dict_of_socrata_dataset_providers[dataset_name_with_spaces_but_no_illegal],
                                         total_number_of_null_fields=total_number_of_null_values,
                                         percent_null=percent_of_dataset_are_null_values
                                         )
