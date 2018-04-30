@@ -386,8 +386,8 @@ def main():
     # Variables for next lower scope (alphabetic)
     dataset_counter = 0
     problem_dataset_counter = 0
-    valid_nulls_dataset_counter = 0
     valid_no_null_dataset_counter = 0
+    valid_nulls_dataset_counter = 0
 
     # Need to inventory field names of every dataset and tally null/empty values
     for dataset_name, dataset_api_id in dict_of_socrata_dataset_IDs.items():
