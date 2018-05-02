@@ -50,18 +50,6 @@ def build_csv_file_name_with_date(today_date_string, filename):
     """
     return "{}_{}.csv".format(today_date_string, filename)
 
-def build_data_providers_inventory(data_providers_dictionary, cleaned_dataset_name, cleaned_provider_name):
-    """
-    From the data freshness report build an inventory of dataset owners
-
-    :param data_providers_dictionary: Dictionary to be populated with the results and returned
-    :param cleaned_dataset_name: Dataset name with illegal characters removed ahead of time
-    :param cleaned_provider_name: Provider name with illegal characters removed ahead of time
-    :return: Dictionary in format of ['dataset name' : 'provider name']
-    """
-    data_providers_dictionary[cleaned_dataset_name] = os.path.basename(cleaned_provider_name)
-    return
-
 def build_dataset_url(url_root, api_id, limit_amount, offset, total_count):
     """
     Build the url used for each request for data from socrata
@@ -198,11 +186,12 @@ def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=Fal
     else:
         re_string = "[a-zA-Z0-9]"
     strings_list = re.findall(re_string,string_with_illegals)
-    concatenated = ""
-    for item in strings_list:
-        if len(item) > 0:
-            concatenated = concatenated + item
-    return concatenated
+    # concatenated = ""
+    # for item in strings_list:
+    #     if len(item) > 0:
+    #         concatenated = concatenated + item
+    # return concatenated
+    return "".join(strings_list)
 
 def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
     """
@@ -379,9 +368,7 @@ def main():
         data_freshness_data_provider = (record_obj["data_provided_by"]).encode("utf8")
         provider_name_noillegal = handle_illegal_characters_in_string(string_with_illegals=data_freshness_data_provider,
                                                             spaces_allowed=True)
-        build_data_providers_inventory(data_providers_dictionary=dict_of_socrata_dataset_providers,
-                                       cleaned_dataset_name=data_freshness_report_dataset_name_noillegal,
-                                       cleaned_provider_name=provider_name_noillegal)
+        dict_of_socrata_dataset_providers[data_freshness_report_dataset_name_noillegal] = os.path.basename(provider_name_noillegal)
 
     # Variables for next lower scope (alphabetic)
     dataset_counter = 0
@@ -407,8 +394,6 @@ def main():
 
         dataset_counter += 1
         print("{}: {} ............. {}".format(dataset_counter, dataset_name_with_spaces_but_no_illegal.upper(), dataset_api_id))
-
-
 
         # Variables for next lower scope (alphabetic)
         dataset_fields_string = None
@@ -478,9 +463,9 @@ def main():
 
             # If Socrata didn't send the headers see if the dataset is one of the two known to be too big
             if field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == REAL_PROPERTY_HIDDEN_NAMES_API_ID.value:
-                json_file_contents = read_json_file(REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE.value)
+                json_file_contents = read_json_file(file_path=REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE.value)
             elif field_headers == None and is_special_too_many_headers_dataset and dataset_api_id == CORRECTIONAL_ENTERPRISES_EMPLOYEES_API_ID.value:
-                json_file_contents = read_json_file(CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
+                json_file_contents = read_json_file(file_path=CORRECTIONAL_ENTERPRISES_EMPLOYEES_JSON_FILE.value)
             elif field_headers == None and is_special_too_many_headers_dataset:
                 # In case a new previously unknown dataset comes along with too many fields for transfer
                 problem_message = "Too many fields. Socrata suppressed X-SODA2-FIELDS value in response."
@@ -494,8 +479,8 @@ def main():
 
             # If special, first time through load the field names from their pre-made json files.
             if json_file_contents != None:
-                json_loaded = load_json(json_file_contents)
-                field_names_dictionary = grab_field_names_for_mega_columned_datasets(json_loaded)
+                json_loaded = load_json(json_file_contents=json_file_contents)
+                field_names_dictionary = grab_field_names_for_mega_columned_datasets(socrata_json_object=json_loaded)
                 field_headers = field_names_dictionary["visible"]
             else:
                 pass
@@ -521,6 +506,8 @@ def main():
             partial_function_for_multithreading = partial(inspect_record_for_null_values,
                                                           null_count_for_each_field_dict)
             # FIXME: no null records are "seen" and no csv files for datasets are written when multiprocessor approach is used
+            # I think multiprocessing makes copies of this script for use in each processor so they are not sharing the same
+            #   variables. I think this may be the issue ??
             # pool = Pool()
             pool = ThreadPool(THREAD_COUNT.value)
             pool.map(partial_function_for_multithreading, json_objects_pythondict)
@@ -541,7 +528,7 @@ def main():
         # Output the results, to a stand alone csv for each dataset containing null values,
         #   to a csv of problematic datasets, and to the overview for all datasets.
         total_number_of_null_values = calculate_total_number_of_empty_values_per_dataset(
-            null_count_for_each_field_dict.values())
+            null_counts_list=null_count_for_each_field_dict.values())
         percent_of_dataset_are_null_values = calculate_percent_null_for_dataset(
             null_count_total=total_number_of_null_values,
             total_records_processed=total_record_count,
@@ -594,7 +581,8 @@ def main():
                                         percent_null=percent_of_dataset_are_null_values
                                         )
 
-    performance_summary_filename = build_csv_file_name_with_date(build_today_date_string(), PERFORMANCE_SUMMARY_FILE_NAME.value)
+    performance_summary_filename = build_csv_file_name_with_date(today_date_string=build_today_date_string(),
+                                                                 filename=PERFORMANCE_SUMMARY_FILE_NAME.value)
     write_script_performance_summary(root_file_destination_location=ROOT_PATH_FOR_CSV_OUTPUT.value,
                                      filename=performance_summary_filename,
                                      start_time=process_start_time,
