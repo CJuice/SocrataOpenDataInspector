@@ -47,7 +47,7 @@ PERFORMANCE_SUMMARY_FILE_NAME = Variable("__script_performance_summary")
 PROBLEM_DATASETS_FILE_NAME = Variable("_PROBLEM_DATASETS")
 REAL_PROPERTY_HIDDEN_NAMES_API_ID = Variable("ed4q-f8tm")
 REAL_PROPERTY_HIDDEN_NAMES_JSON_FILE = Variable("RealPropertyHiddenOwner_JSON.json")
-ROOT_PATH_FOR_CSV_OUTPUT = Variable(r"E:\DoIT_OpenDataInspection_Project\TESTING_OUTPUT_CSVs")              # TESTING
+ROOT_PATH_FOR_CSV_OUTPUT = Variable(r"E:\DoIT_OpenDataInspection_Project\OUTPUT_CSVs")
 ROOT_URL_FOR_DATASET_ACCESS = Variable(r"https://data.maryland.gov/resource/")
 THREAD_COUNT = Variable(8)
 
