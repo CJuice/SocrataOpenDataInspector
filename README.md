@@ -1,4 +1,4 @@
-# Socrata_Open_Data_Inspector
+# Socrata Open Data Datasets Inspector
 Inspect all datasets in MD DoIT Open Data Portal on Socrata, inventory null data, and output statistics in .csv files.
 
 Use the Data Freshness Report dataset to identify all datasets to be inspected by this process.
