@@ -1,8 +1,24 @@
 """
-PENDING FUNCTIONALITY
-only processes datasets that have been processed more recently than the last run
-    reads the last date processed information from the api metadata for the dataset
-compare previous results against current to see change in the datasets
+Inspect all datasets in MD DoIT Open Data Portal on Socrata, inventory null data, and output statistics in .csv files.
+
+Use the Data Freshness Report dataset to identify all datasets to be inspected by this process.
+For each dataset, request records from Socrata, inventory nulls in records, and repeat until all records have been
+ processed.
+Identify datasets without nulls, with nulls, and problem datasets that couldn't be processed.
+Output a csv file providing an overview of the entire process findings, a csv file providing information on each
+ dataset with nulls including insight by column, a csv file capturing all problematic datasets, and a csv file
+ reporting on the performance of the script.
+Author: CJuice
+Date: 20180501
+Revisions:
+
+PENDING FUNCTIONALITY:
+Only processes datasets that have been processed more recently than the last run. Reads the last date processed
+ information from the api metadata for the dataset.
+Compare previous results against current to see change in the datasets.
+Multiprocessing use for speed. Note: No null records are "seen" and no csv files for datasets are written when
+ multiprocessor approach is used. I think multiprocessing makes copies of this script for use in each processor
+ so they are not sharing the same variables. I think this may be the issue.
 """
 
 # IMPORTS
@@ -162,8 +178,9 @@ def grab_field_names_for_mega_columned_datasets(socrata_json_object):
         meta = socrata_json_object['meta']
         view = meta['view']
         column_list = view['columns']
-    except Exception as e:
-        print("Problem accessing json dictionaries: {}".format(e))
+    except KeyError as ke:
+        print("Problem accessing json dictionary in Mega Column Dataset File. Key not found = {}".format(ke))
+        exit()
     for dictionary in column_list:
         temp_field_list = dictionary.keys()
         if 'flags' in temp_field_list:
@@ -186,11 +203,6 @@ def handle_illegal_characters_in_string(string_with_illegals, spaces_allowed=Fal
     else:
         re_string = "[a-zA-Z0-9]"
     strings_list = re.findall(re_string,string_with_illegals)
-    # concatenated = ""
-    # for item in strings_list:
-    #     if len(item) > 0:
-    #         concatenated = concatenated + item
-    # return concatenated
     return "".join(strings_list)
 
 def inspect_record_for_null_values(field_null_count_dict, record_dictionary):
@@ -242,7 +254,7 @@ def write_dataset_results_to_csv(dataset_name, root_file_destination_location, f
     :return: None
     """
     file_path = os.path.join(root_file_destination_location, filename)
-    if os.path.exists(root_file_destination_location):
+    try:
         with open(file_path, 'w') as file_handler:
             file_handler.write("{}\n".format(dataset_name))
             file_handler.write("RECORD COUNT TOTAL,{}\n".format(total_records))
@@ -253,8 +265,8 @@ def write_dataset_results_to_csv(dataset_name, root_file_destination_location, f
                 if total_records > 0:
                     percent = (value / float(total_records))*100
                 file_handler.write("{},{},{:6.2f}\n".format(key, value, percent))
-    else:
-        print("Directory DNE: {}".format(root_file_destination_location))
+    except IOError as io_err:
+        print(io_err)
         exit()
     return
 
@@ -273,7 +285,7 @@ def write_overview_stats_to_csv(root_file_destination_location, filename, datase
     :return: None
     """
     file_path = os.path.join(root_file_destination_location, filename)
-    if os.path.exists(root_file_destination_location):
+    try:
         if not os.path.exists(file_path):
             with open(file_path, "w") as file_handler:
                 file_handler.write("DATASET NAME,FILE NAME,TOTAL COLUMN COUNT,TOTAL RECORD COUNT,TOTAL NULL VALUE COUNT,PERCENT NULL,DATA PROVIDER\n")
@@ -287,8 +299,8 @@ def write_overview_stats_to_csv(root_file_destination_location, filename, datase
                                                                      percent_null,
                                                                      data_provider)
                                    )
-    else:
-        print("Directory DNE: {}".format(root_file_destination_location))
+    except IOError as io_err:
+        print(io_err)
         exit()
     return
 
@@ -303,15 +315,15 @@ def write_problematic_datasets_to_csv(root_file_destination_location, filename, 
     :return: None
     """
     file_path = os.path.join(root_file_destination_location, filename)
-    if os.path.exists(root_file_destination_location):
+    try:
         if not os.path.exists(file_path):
             with open(file_path, "w") as file_handler:
                 file_handler.write("DATASET NAME,PROBLEM MESSAGE,RESOURCE\n")
         if os.path.exists(file_path):
             with open(file_path, 'a') as file_handler:
                 file_handler.write("{},{},{}\n".format(dataset_name, message, resource))
-    else:
-        print("Directory DNE: {}".format(root_file_destination_location))
+    except IOError as io_err:
+        print(io_err)
         exit()
     return
 
@@ -330,15 +342,19 @@ def write_script_performance_summary(root_file_destination_location, filename, s
     :return: None
     """
     file_path = os.path.join(root_file_destination_location, filename)
-    with open(file_path, 'w') as scriptperformancesummaryhandler:
-        scriptperformancesummaryhandler.write("Date,{}\n".format(build_today_date_string()))
-        scriptperformancesummaryhandler.write("Number of datasets in freshness report,{}\n".format(number_of_datasets_in_data_freshness_report))
-        scriptperformancesummaryhandler.write("Total datasets processed,{}\n".format(dataset_counter))
-        scriptperformancesummaryhandler.write("Valid datasets with nulls count (csv generated),{}\n".format(valid_nulls_dataset_counter))
-        scriptperformancesummaryhandler.write("Valid datasets without nulls count (no csv),{}\n".format(valid_no_null_dataset_counter))
-        scriptperformancesummaryhandler.write("Problematic datasets count,{}\n".format(problem_dataset_counter))
-        time_took = time.time() - start_time
-        scriptperformancesummaryhandler.write("Process time (minutes),{:6.2f}\n".format(time_took/60.0))
+    try:
+        with open(file_path, 'w') as scriptperformancesummaryhandler:
+            scriptperformancesummaryhandler.write("Date,{}\n".format(build_today_date_string()))
+            scriptperformancesummaryhandler.write("Number of datasets in freshness report,{}\n".format(number_of_datasets_in_data_freshness_report))
+            scriptperformancesummaryhandler.write("Total datasets processed,{}\n".format(dataset_counter))
+            scriptperformancesummaryhandler.write("Valid datasets with nulls count (csv generated),{}\n".format(valid_nulls_dataset_counter))
+            scriptperformancesummaryhandler.write("Valid datasets without nulls count (no csv),{}\n".format(valid_no_null_dataset_counter))
+            scriptperformancesummaryhandler.write("Problematic datasets count,{}\n".format(problem_dataset_counter))
+            time_took = time.time() - start_time
+            scriptperformancesummaryhandler.write("Process time (minutes),{:6.2f}\n".format(time_took/60.0))
+    except IOError as io_err:
+        print(io_err)
+        exit()
     return
 
 # FUNCTIONALITY
@@ -385,7 +401,7 @@ def main():
             spaces_allowed=True)
         dataset_api_id = dataset_api_id.encode("utf8")
 #____________________________________________________________________________________________________________
-        #TESTING - avoid huge datasets on test runs
+        # FOR TESTING - avoid huge datasets on test runs
         huge_datasets_api_s = (REAL_PROPERTY_HIDDEN_NAMES_API_ID.value,)
         if dataset_api_id in huge_datasets_api_s:
             print("Dataset Skipped Intentionally (TESTING): {}".format(dataset_name_with_spaces_but_no_illegal))
@@ -505,9 +521,6 @@ def main():
 
             partial_function_for_multithreading = partial(inspect_record_for_null_values,
                                                           null_count_for_each_field_dict)
-            # FIXME: no null records are "seen" and no csv files for datasets are written when multiprocessor approach is used
-            # I think multiprocessing makes copies of this script for use in each processor so they are not sharing the same
-            #   variables. I think this may be the issue ??
             # pool = Pool()
             pool = ThreadPool(THREAD_COUNT.value)
             pool.map(partial_function_for_multithreading, json_objects_pythondict)
@@ -520,7 +533,7 @@ def main():
             # Any cycle_record_count that equals the max limit indicates another request is needed
             if cycle_record_count == LIMIT_MAX_AND_OFFSET.value:
                 # Give Socrata servers small interval before requesting more
-                time.sleep(0.3)
+                time.sleep(0.2)
                 socrata_record_offset_value = cycle_record_count + socrata_record_offset_value
             else:
                 more_records_exist_than_response_limit_allows = False
